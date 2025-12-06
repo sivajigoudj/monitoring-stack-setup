@@ -1,0 +1,65 @@
+version: '3'
+
+x-airflow-common:
+  &airflow-common
+  image: apache/airflow:2.9.2
+  environment:
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres/airflow
+    AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+
+    # StatsD (for your statsd_exporter)
+    AIRFLOW__METRICS__STATSD_ON: "True"
+    AIRFLOW__METRICS__STATSD_HOST: statsd-exporter
+    AIRFLOW__METRICS__STATSD_PORT: "9125"
+    AIRFLOW__METRICS__STATSD_PREFIX: airflow
+
+  volumes:
+    - ./dags:/opt/airflow/dags
+  depends_on:
+    - postgres
+    - redis
+
+services:
+
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+
+  statsd-exporter:
+    image: statsd-exporter:latest
+    ports:
+      - "9103:9102"
+      - "9125:9125/udp"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8080:8080"
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+
+  airflow-worker:
+    <<: *airflow-common
+    command: celery worker
+
+  airflow-init:
+    <<: *airflow-common
+    command: bash -c "airflow db migrate && airflow users create -u admin -p admin -r Admin -e admin@example.com -f admin -l user"
+    restart: "no"
+
+volumes:
+  postgres_data:
+
